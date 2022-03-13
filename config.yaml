@@ -19,8 +19,6 @@ params:
   highlightjs: yes
   highlightjslanguages:
     - r
-    - python
-    - stan
   progressively: no
   sitename: Pierre Barban
   uselatex: yes
