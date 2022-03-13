@@ -1,0 +1,17 @@
+---
+title: Hi Hugo
+author: R package build
+date: '2022-03-13'
+slug: []
+categories: []
+tags:
+  - one tag
+  - another tag
+meta_img: images/image.png
+description: Description for the page
+---
+
+```{r}
+print("test")
+```
+

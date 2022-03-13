@@ -1,13 +1,12 @@
 ---
-description: Someone's blog
-menu: main
-title: Blog
+author: Nan Xiao
+date: 2016-01-22T09:00:00
+title: Detour Sign and the Man in the Neon Coat, Got the Flashlight, Got the Moonlight,
+  Swimming in the Blue Light
 ---
-<p align="center">
-<img src="IMG_0071.JPG" width="200"/> <img src="IMG_0088.JPG" width="200"/> <img src="IMG_0056.JPG" width="200"/> 
-</p>
 
-<p style='text-align: justify;'>
-My name is Pierre Barban. Freshly graduated from two masters' mainly focusing on environmental economics, I am currently a data analyst at Eco-Counter in Montréal, Canada. My amazing job gives me the opportunity to support cities, national parks, and other governmental institutions to enhance their pedestrian and bicycle counts data.
-At the moment I am creating this blog, I intent to share stories mostly covering sustainable topics supported by data analysis. I am also planning on analyzing interesting data sets that I might come upon in my daily life. At the border of academics and story-telling, I hope to write comprehensive posts with the scientific rigour that I have learned throughout my young research career. Unless specified, all my data analysis are wtitten down with the programming language R. All constructive feedback are more than welcome. 
-</p>
+**Lorem ipsum** dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore _magna aliqua_. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+
+In modus congue feugait eos. In nec nonumy volutpat corrumpit, sea assentior quaerendum no, cum affert scripta ea. No nihil voluptaria pro. [Erat democritum mei no](https://example.com), homero quodsi aliquando id mel, ridens civibus molestiae et nam.
+
+Ea eam postea facilisi. Nullam forensibus consequuntur usu ea, no ius consul delectus periculis. Eam veri numquam an. Et partiendo gubergren eam. Quod iudicabit has ex, eam diam facilisi eu, elitr aliquip no eum.

@@ -1,6 +1,6 @@
-baseurl: https://pierrebarbarban.netlify.app/
-title: Pierre Barban
-author: Pierre Barban
+baseurl: https://example.com
+title: Hugo Tanka Theme Demo
+author: Nan Xiao
 canonifyurls: yes
 languagecode: en
 theme: hugo-tanka
@@ -19,8 +19,10 @@ params:
   highlightjs: yes
   highlightjslanguages:
     - r
+    - python
+    - stan
   progressively: no
-  sitename: Pierre Barban
+  sitename: Hugo Tanka Theme
   uselatex: yes
 markup:
   goldmark:
