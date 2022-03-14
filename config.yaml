@@ -1,6 +1,6 @@
 baseurl: https://pierrebarbarban.netlify.app
 title: Pierre Barban
-author: Nan Xiao
+author: Pierre Barban
 canonifyurls: yes
 languagecode: en
 theme: hugo-tanka
@@ -19,8 +19,6 @@ params:
   highlightjs: yes
   highlightjslanguages:
     - r
-    - python
-    - stan
   progressively: no
   sitename: Hugo Tanka Theme
   uselatex: yes
@@ -29,18 +27,15 @@ markup:
     renderer:
       unsafe: yes
 menu:
-  primary:
-    - name: Home
-      url: /
-      weight: 1
+  primary: 
     - name: About
-      url: /about/
+      url: /about/about
+      weight: 1
+    - name: Blog
+      url: /post/
       weight: 2
-    - name: GitHub
-      url: https://github.com/nanxstats
-      weight: 3
     - name: Twitter
-      url: https://twitter.com/nanxstats
+      url: https://twitter.com/BarbanPierre
       weight: 4
     - name: Subscribe
       url: /index.xml
