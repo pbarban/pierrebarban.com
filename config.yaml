@@ -16,11 +16,11 @@ ignoreFiles:
   - \.utf8\.md$
 params:
   faviconfile: images/favicon.png
-  highlightjs: yes
+  highlightjs: no
   highlightjslanguages:
     - r
   progressively: no
-  sitename: Hugo Tanka Theme
+  sitename: Pierre Barban
   uselatex: yes
 markup:
   goldmark:
