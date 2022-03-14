@@ -16,7 +16,7 @@ ignoreFiles:
   - \.utf8\.md$
 params:
   faviconfile: images/favicon.png
-  highlightjs: no
+  highlightjs: yes
   highlightjslanguages:
     - r
   progressively: no
