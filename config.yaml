@@ -15,7 +15,7 @@ permalinks:
 menu:
   main:
     - name: CV
-      url: /about/
+      url: /vitae/
     - name: Blog
       url: /post/
     - name: Twitter
@@ -34,7 +34,7 @@ params:
   logo:
     alt: Logo
     height: 50
-    url: logo.png
+    url: Logo.png
     width: 50
 markup:
   defaultMarkdownHandler: goldmark
