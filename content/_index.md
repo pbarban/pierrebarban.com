@@ -7,6 +7,6 @@ title: Pierre Barban
 </p>
 
 <p style='text-align: justify;'>
-My name is Pierre Barban. I am a data analyst at Eco-Counter in Montréal, Canada. My amazing job gives me the opportunity to support cities, national parks, and other governmental institutions to enhance their pedestrian and bicycle counts data.
-At the moment I am creating this blog, I intent to share stories mostly covering sustainable topics supported by data analysis. At the border of academics and story-telling, I hope to write comprehensive posts with the scientific rigour that I have learned throughout my young research career. Unless specified, all my data analysis are written down with the programming language R. All constructive feedback are more than welcome. 
+My name is Pierre Barban. I am a data analyst currently located in Montréal, Canada. My amazing job gives me the opportunity to assist cities, national parks, and other governmental institutions to enhance their pedestrian and bicycle counting data.
+I intent to share stories mostly covering topics related to sustainability supported by data analytics. At the border of academics and story-telling, I hope to write comprehensive posts with the scientific rigour that I have learned throughout my young research career. Unless specified, all my data analysis done with the programming language R. All constructive feedbacks are more than welcome. 
 </p>
