@@ -14,10 +14,8 @@ permalinks:
   post: /:year/:month/:day/:slug/
 menu:
   main:
-    - name: About
-      url: /home/
-    - name: CV
-      url: /vitae/
+    - name: Vitae
+      url: /about/
     - name: Blog
       url: /post/
     - name: Twitter
