@@ -1,0 +1,201 @@
+---
+title: One Year of Bike Commuting
+author: R package build
+date: '2022-03-15'
+slug: one-year-of-bike-commuting
+categories: []
+tags: []
+---
+
+```{r}
+pacman::p_load(rStrava,
+               dplyr,
+               gepaf)
+
+
+app_name <- 'PierreBarban' # chosen by user
+app_client_id  <- '55569' # an integer, assigned by Strava
+app_secret <- '92c99618966c4fb431cc6d18dac4698692f9816c' # an alphanumeric secret, assigned by Strava
+
+# create the authentication token
+stoken <- httr::config(token = strava_oauth(app_name, app_client_id, app_secret, app_scope="activity:read_all"))
+
+```
+
+```{r}
+pacman::p_load(tidyr,
+              ggplot2,
+              lubridate)
+
+my_acts <- get_activity_list(stoken)
+
+raw_data <- compile_activities(my_acts) %>% 
+  mutate(datetime = sub("T", " ", start_date_local),
+         datetime = as.POSIXlt(datetime),
+         dateday = as.Date(datetime))
+
+# Keep only bike commute activities
+
+all_commutes <- raw_data %>% 
+  filter(commute == T | name == "Commute")%>% 
+  filter(type == "Ride") %>% 
+  filter(year(dateday) == 2021)
+```
+
+# Calendar
+```{r}
+weekdays_labs <- all_commutes %>% 
+  mutate(labs = wday(dateday, label = T, abbr = F, week_start = 1)) %>% 
+  pull(labs ) %>%
+    unique()
+
+months_labs <- all_commutes %>% 
+  mutate(labs = month(dateday, label = T, abbr = F)) %>% 
+  pull(labs ) %>%
+    unique()
+
+all_commutes %>% 
+  mutate(wday = wday(dateday, label = F, week_start = 1) - 0.5,
+         weeks = week(dateday)+0.5) %>% 
+  group_by(weeks, wday) %>% 
+  summarise(n = n())%>% 
+ggplot(aes(x = weeks,
+                 y = wday,
+                 fill = n))  +
+  geom_tile(color = "white",
+            linetype = 1) +
+ theme(panel.grid.minor.x  = element_line(color = "grey",
+                                        size = 0.25,
+                                        linetype = 1),
+       panel.grid.minor.y  = element_line(color = "grey",
+                                        size = 0.25,
+                                        linetype = 1),
+       panel.grid.major.x = element_blank(),
+       panel.grid.major.y = element_blank(),
+       panel.background = element_rect(fill = "white",
+                                colour = "white"),
+       axis.text.x = element_text(angle = 30,
+                                  vjust = 0.75,
+                                  hjust = 0.45),
+       axis.ticks = element_blank(),
+       axis.title = element_blank(),
+       legend.position = "top")+ 
+  guides(fill = guide_legend(title = "Number of daily trips",
+                             title.position = "top",
+                             title.hjust = 0.5))+
+  scale_x_continuous(minor_breaks = seq(1, 54, by = 1),
+                     breaks = seq(1,54,by = 4.5),
+                     labels = sort(months_labs),
+                     expand = c(0,0))+ 
+  scale_y_continuous(breaks = seq(0.5, 6.5, by = 1),
+                     labels = sort(weekdays_labs),
+                     expand = c(0,0))
+```
+
+# Total distance
+```{r}
+
+all_commutes %>% 
+  arrange(dateday) %>% 
+  mutate(cum_dist = cumsum(distance)) %>% 
+  ggplot(aes(x = dateday)) + 
+  geom_line(aes(y = cum_dist),
+            size = 1.5,
+            color = "#23496C")+ 
+  scale_x_date(date_labels = "%B",
+               date_breaks = "1 month",
+                     expand = c(0,0)) +
+  labs( y = "In KMs") +
+  theme(axis.text.x = element_text(angle = 30,
+                                  vjust = 0.75,
+                                  hjust = 0.45),
+        axis.title.y = element_text(hjust=1,
+                                    face = "bold"),
+        axis.title.x = element_blank(),
+        panel.background = element_rect(fill = "white",
+                                colour = "white"),
+        panel.grid.major = element_line(color = "grey",
+                                        size = 0.25,
+                                        linetype = 1),
+         axis.ticks = element_line(color = "grey",
+                                        size = 0.25,
+                                        linetype = 1))
+
+```
+```{r}
+
+library(raster)
+library(sp)
+library(geosphere)
+library(rgeos)
+
+GPS_data = all_commutes %>% 
+  filter(is.na(map.summary_polyline) == F) %>% 
+  group_by(id) %>% 
+  mutate( trace = list(decodePolyline(map.summary_polyline))) %>% 
+  unnest(trace)
+
+GPS_data
+
+
+pacman::p_load(rnaturalearth,
+               rnaturalearthdata)
+
+world <- ne_countries(scale = "medium", returnclass = "sf")
+class(world)
+
+ggplot(data = world) +
+    geom_sf(fill = alpha("#fff0db", 1))+
+  geom_point(data = all_commutes,
+            aes(x = start_longitude,
+                y = start_latitude,
+                color = "Activities"),
+            size = 2) +
+  scale_x_continuous(limits = c(-123,8))+
+  scale_y_continuous(limits = c(35,60),
+                     breaks = seq(35,65,7.5))+
+  theme(legend.position = c(.1, .9),
+        legend.title = element_blank(),
+        legend.text = element_text(face="bold",
+                                   size = 10),
+        legend.background = element_blank(),
+        legend.key = element_rect( fill = "transparent", color = "black"),
+        axis.title = element_blank(),
+        panel.background = element_rect(fill = alpha("#448DC6", 0.6))) + 
+  scale_color_manual(values="#EC5E2A",
+                       breaks= "Activities")
+```
+
+```{r}
+library(ggridges)
+
+all_commutes %>% 
+mutate(hour = hour(as.POSIXlt(sub("T", " ", start_date_local))),
+       wday = wday(dateday,
+                   label = T,
+                   abbr = F,
+                   week_start = 1),
+       wday_fact = wday(dateday,
+                        week_start = 1)) %>% 
+  ggplot(aes(x = hour, 
+             y = wday,
+             fill = wday_fact)) + 
+  geom_density_ridges(scale= 1.5) +
+  scale_x_continuous(limits = c(0,23),
+                     expand = c(0,0),
+                     breaks = seq(0,23,1))+
+  scale_y_discrete(expand = c(0.02,0)) +
+  labs( y = "",
+        x = "Hour of the day")+
+  theme(legend.position = "",
+        axis.text.y = element_text(vjust = -2.5),
+        axis.ticks.y = element_blank(),
+        axis.ticks.length=unit(.25, "cm"),
+        axis.title.x = element_text(hjust=1,
+                                    face = "bold"),
+        panel.background = element_rect(fill = "white",
+                                colour = "white"))
+
+
+```
+
