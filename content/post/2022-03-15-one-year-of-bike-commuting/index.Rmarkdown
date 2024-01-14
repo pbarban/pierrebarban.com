@@ -25,9 +25,12 @@ stoken <- httr::config(token = strava_oauth(app_name, app_client_id, app_secret,
 ```{r}
 pacman::p_load(tidyr,
               ggplot2,
-              lubridate)
+              lubridate,
+              httr)
 
-my_acts <- get_activity_list(stoken)
+my_acts <- get_activity_list(stoken,
+                             before = as.Date("2022-01-01"),
+                             after = as.Date("2021-01-01"))
 
 raw_data <- compile_activities(my_acts) %>% 
   mutate(datetime = sub("T", " ", start_date_local),
@@ -38,8 +41,7 @@ raw_data <- compile_activities(my_acts) %>%
 
 all_commutes <- raw_data %>% 
   filter(commute == T | name == "Commute")%>% 
-  filter(type == "Ride") %>% 
-  filter(year(dateday) == 2021)
+  filter(type == "Ride")
 ```
 
 # Calendar
@@ -80,9 +82,10 @@ ggplot(aes(x = weeks,
        axis.ticks = element_blank(),
        axis.title = element_blank(),
        legend.position = "top")+ 
-  guides(fill = guide_legend(title = "Number of daily trips",
+  guides(fill = guide_legend(title = "Number of trips per day",
                              title.position = "top",
-                             title.hjust = 0.5))+
+                             title.hjust = 0.5,
+                             nrow = 1))+
   scale_x_continuous(minor_breaks = seq(1, 54, by = 1),
                      breaks = seq(1,54,by = 4.5),
                      labels = sort(months_labs),
@@ -121,21 +124,17 @@ all_commutes %>%
                                         size = 0.25,
                                         linetype = 1))
 
+## maybe add elevation, number of hours and average speed
+#compare the average speed to cars in cities
+
 ```
+#world map
 ```{r}
 
 library(raster)
 library(sp)
 library(geosphere)
-library(rgeos)
-
-GPS_data = all_commutes %>% 
-  filter(is.na(map.summary_polyline) == F) %>% 
-  group_by(id) %>% 
-  mutate( trace = list(decodePolyline(map.summary_polyline))) %>% 
-  unnest(trace)
-
-GPS_data
+#library(rgeos)
 
 
 pacman::p_load(rnaturalearth,
@@ -147,8 +146,8 @@ class(world)
 ggplot(data = world) +
     geom_sf(fill = alpha("#fff0db", 1))+
   geom_point(data = all_commutes,
-            aes(x = start_longitude,
-                y = start_latitude,
+            aes(x = start_latlng2,
+                y = start_latlng1,
                 color = "Activities"),
             size = 2) +
   scale_x_continuous(limits = c(-123,8))+
@@ -165,7 +164,7 @@ ggplot(data = world) +
   scale_color_manual(values="#EC5E2A",
                        breaks= "Activities")
 ```
-
+# weekly
 ```{r}
 library(ggridges)
 
@@ -195,7 +194,784 @@ mutate(hour = hour(as.POSIXlt(sub("T", " ", start_date_local))),
                                     face = "bold"),
         panel.background = element_rect(fill = "white",
                                 colour = "white"))
+```
+# Weather
+
+```{r}
+get_weather <- function(latitude,
+                              longitude,
+                              from_date,
+                              last_date,
+                              one_station = F){
+  
+  base_url <- "https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/" 
+  x <- seq(as.Date(min(from_date)), as.Date(max(last_date)), "day")
+  test <- split(x, ceiling(seq_along(x)/35))
+  all_range <- lapply(test, range)
+  
+  if(one_station == T){ station <- "&maxStations=1"}else{
+    station <- NULL}
+  
+  data_frame <- data.frame()
+  for(i in all_range){
+    print(paste(i[1],i[2]))
+    URL <- paste0(base_url,
+                         latitude,
+                         "%2C%20",
+                         longitude,
+                         "/",
+                         i[1],
+                         "/",
+                         i[2],
+                         "?unitGroup=metric&key=QXZ57FEH6C5VRLL7WGHNLHTCG",station,"&contentType=json")
+    print(URL)
+    get_req <- httr::GET(URL)
+    response_json <- jsonlite::fromJSON(rawToChar((get_req[["content"]])))  
+    data_frame <- data_frame %>% 
+      plyr::rbind.fill(response_json[["days"]])
+  }
+  return(data_frame)}
+
+
+
+cluster_all <- all_commutes %>% 
+  dplyr::select(start_latlng2,
+        start_latlng1) 
+
+firstPoints <- SpatialPoints(coords = cbind(all_commutes$start_latlng2,
+                                            all_commutes$start_latlng1))
+
+xy <- SpatialPointsDataFrame(
+      matrix(c(all_commutes$start_latlng2,
+               all_commutes$start_latlng1), ncol=2),
+      data.frame(ID=seq(1:length(all_commutes$start_latlng1))),
+      proj4string=CRS("+proj=longlat +ellps=WGS84 +datum=WGS84"))
+
+mdist <- distm(xy)
+
+hc <- hclust(as.dist(mdist), method="complete")
+
+d= 200000
+
+xy$clust <- cutree(hc, h=d)
+
+df_cluster <- as.data.frame(xy)%>% 
+  cbind(all_commutes)
+
+cluster_all <- df_cluster %>% 
+  group_by(clust) %>% 
+  summarise(long = mean(coords.x1),
+            lat = mean(coords.x2),
+            min_date = min(dateday),
+            max_date = max(dateday))
+
+weather_list <- list()
+
+for(p in 1:nrow(cluster_all)){
+  print(p)
+  
+  df <- cluster_all %>% 
+    filter(clust == p)
+  
+ out <-  get_weather(df$lat,
+              df$long,
+              df$min_date,
+              df$max_date)
+  
+weather_list[[p]] <-  out
+
+return(weather_list)
+}
+
+ weather_df <- data.table::rbindlist(weather_list,
+                               fill = T) %>% 
+     unnest(hours, names_sep = "_") %>% 
+   mutate(hour = as.numeric(substr(hours_datetime, 1 ,2)))
+
+data_list <- list()
+for(i in 1:nrow(df_cluster)){
+  
+df <- df_cluster %>% 
+  filter(ID == i)
+
+print(i)
+
+out <- weather_df %>% 
+  filter(datetime == df$dateday &
+           hour == hour(df$datetime)) %>% 
+  slice(1) %>% 
+  cbind(ID = df$ID)
+
+print(nrow(out))
+  
+data_list[[i]] <-  out
+}
+
+df <- data.table::rbindlist(data_list)
+
+ggplot(df) + 
+  geom_point(aes(x = hours_temp,
+                 y = precip)) + 
+  geom_point(aes(x = hours_temp,
+                 y =  - snow))
+
+```
+
+
+```{r}
+pacman::p_load(factoextra,
+               osmdata,
+               tidyverse,
+               sf,
+               ggmap,
+               tmap,
+               forcats)
+
+municipalities <- opq(bbox = matrix(c( 2.219044,
+                                          2.5,
+                                          48.720164,
+                                          48.910349),
+       byrow = T,
+       nrow = 2,
+       dimnames = list(c("x", "y"), c("min","max")))) %>%
+  add_osm_feature(key = 'admin_level', value = '8') %>% 
+  osmdata_sf %>% 
+  unique_osmdata() 
+
+#Maybe change that, df useless
+df <- all_commutes %>%
+  as.data.frame()
+
+starting_points <- df %>% 
+ dplyr::select(id,
+        start_latlng1, 
+        start_latlng2) %>% 
+  st_as_sf(coords = c("start_latlng2", "start_latlng1"), 
+                 crs = 4326 , agr = "constant") %>% 
+  st_join( municipalities$osm_multipolygons, left = F) %>% 
+  dplyr::select(id, name) %>% 
+  rename("starting_city" = "name")%>% 
+  st_drop_geometry()
+
+end_points <- df %>% 
+ dplyr::select(id,
+        end_latlng1, 
+        end_latlng2) %>% 
+  st_as_sf(coords = c("end_latlng2", "end_latlng1"), 
+                 crs = 4326 , agr = "constant") %>% 
+  st_join( municipalities$osm_multipolygons, left = F) %>% 
+  dplyr::select(id, name) %>% 
+  rename("ending_city" = "name")%>% 
+  st_drop_geometry()
+
+full_route <- merge(starting_points, end_points) %>% 
+  rowwise() %>% 
+  mutate(commute = paste(starting_city, "→", ending_city)) 
+
+full_route %>% 
+  group_by(commute) %>% 
+  summarise(n = n()) %>% 
+ggplot() +
+  geom_bar(aes(y = fct_reorder(commute, n),
+               x = n),
+            fill = "#23496C", 
+           stat = "identity")+ 
+  scale_x_continuous(expand = c(0,0)) +
+  labs( x = "Number of trips") +
+  theme(axis.title.x = element_text(hjust=0,
+                                    face = "bold"),
+        axis.title.y = element_blank(),
+        panel.background = element_rect(fill = "white",
+                                colour = "white"),
+        panel.grid.major.x = element_line(color = "grey",
+                                        size = 0.25,
+                                        linetype = 1),
+        panel.grid.minor = element_blank(),
+         axis.ticks = element_line(color = "grey",
+                                        size = 0.25,
+                                        linetype = 1))
+
+```
+As I'm usually late I able to make the assumption that I would always try to take the fastest way that day and hour to reach my destination. I knew that some streets could be faster if I would take the roads where other would be safer by the bike path at rush hours. I would not make that assumptions on my way back. In fact, I would usually take the most pleasant way (along the river or through some green ways), and even stop at some of my favorite boulangeries to grab a yummy croissant as a proud Frenchman
+
+```{r}
+id_main_commutes <- full_route %>% 
+  filter((starting_city == "Rungis" & ending_city == "Paris") | (starting_city == "Paris" & ending_city == "Rungis"))
+
+df_main_commutes <- df %>% 
+  merge(id_main_commutes,
+        by = "id",
+        all.y = T)
+
+GPS_data = df_main_commutes %>% 
+  filter(is.na(map.summary_polyline) == F) %>% 
+  group_by(id) %>% 
+  mutate( trace = list(decodePolyline(map.summary_polyline)))%>% 
+  unnest(trace)
+
+get_map(matrix(c( 2.219044, 2.5, 48.720164, 48.910349),
+       byrow = T,
+       nrow = 2,
+       dimnames = list(c("x", "y"), c("min","max"))), maptype = "toner-background") %>% 
+ggmap()+
+  geom_path(data = GPS_data %>% 
+             filter(ending_city == "Paris"),
+            aes(x = lon,
+                y = lat,
+                group = id),
+            alpha = 0.6,
+            color = "#FF8C00") +
+  geom_point(data = df_main_commutes %>% 
+  filter(ending_city == "Paris"),
+  aes( x= end_latlng2,
+       y = end_latlng1),
+          color = "#23496C",
+          alpha = .9,
+          size = 2)+
+  labs(x = "", y = "")
+
+```
+
+
+```{r}
+cluster <- df_main_commutes %>% 
+  filter(ending_city == "Paris") %>% 
+  dplyr::select(end_latlng2,
+        end_latlng1) %>% 
+  kmeans( centers = 8, iter.max = 10000, nstart = 25)
+
+df_cluster <- df_main_commutes %>% 
+  filter(ending_city == "Paris") %>% 
+merge(as.data.frame(cluster[["cluster"]]),by='row.names',all=TRUE) %>% 
+  rename("cluster" = 'cluster[["cluster"]]')
+
+df_cluster_summarise <- df_cluster %>% 
+  group_by(cluster) %>% 
+  summarise(n = n())
+
+cluster_centers <- cluster[["centers"]] %>% 
+  as.data.frame() %>% 
+  rename(c("long" = "end_latlng2", "lat" = "end_latlng1" )) %>% 
+  mutate(n = row_number())
+
+#Case sensitive, but I dare you to not put a capital P at Paris the Pretty
+get_map(getbb("Paris, France"), maptype = "toner-background") %>% 
+ggmap()+
+  geom_point(data = df_cluster %>% 
+  filter(ending_city == "Paris"),
+  aes( x= end_latlng2,
+       y = end_latlng1,
+       color = as.factor(cluster),
+       fill = as.factor(cluster)),
+          alpha = .7,
+          size = 4,
+ shape =21 )
+
+
+get_map(getbb("Paris, France"), maptype = "toner-background") %>% 
+ggmap()+
+  geom_point(data = cluster_centers, 
+  aes( x= long,
+       y = lat,
+       color = as.factor(n),
+       fill = as.factor(n)),
+          alpha = .9,
+          size = 5,
+  shape =21)+
+  labs(x = "", y = "")
+
 
 
 ```
 
+Funny enough, there is two highways going straight from my hometown to Paris, but by bike I have to go around on each side. 
+If that freeway was converted for bikes, it would take me...
+
+I see that there are two itinerary and I am curious to know th difference between the two. 
+First, I will need to find a strategy to divide each ride in two categories. 
+
+Locals like to divid in Paris in two: Rive droite et rive gauche. I have always tend to think of myself as a rive gauche guy, and once again data is here to confirm that idea. 
+
+```{r}
+#Keep the destination 4
+
+df_focused_commute <- df_cluster %>% 
+  filter(cluster == 6)
+
+
+df_focused_commute_GPS <- df_focused_commute %>% 
+  filter(is.na(map.summary_polyline) == F) %>% 
+  group_by(id) %>% 
+  mutate( trace = list(decodePolyline(map.summary_polyline)))%>% 
+  unnest(trace)
+
+
+get_map(matrix(c( 2.219044, 2.5, 48.720164, 48.910349),
+       byrow = T,
+       nrow = 2,
+       dimnames = list(c("x", "y"), c("min","max"))), maptype = "toner-background") %>% 
+ggmap()+
+  geom_path(data = df_focused_commute_GPS %>% 
+             filter(ending_city == "Paris"),
+            aes(x = lon,
+                y = lat,
+                group = id),
+            alpha = 0.6,
+            color = "#FF8C00") +
+  geom_point(data = cluster_centers %>% 
+               filter(n == 6),
+             aes(x = long,
+                 y = lat),
+             fill = "#23496C",
+             color = "#23496C",
+             alpha = .9,
+          size = 6,
+  shape =21)
+
+```
+
+```{r}
+#Map matching
+
+#####
+
+#Ça marche!
+
+osrmNearest <- function(x,y){
+  curl_req <- httr::GET(url = paste0("http://router.project-osrm.org/nearest/v1/bike/",paste(x,y, sep = ","),"?number=1"))
+    response_json <- jsonlite::fromJSON(rawToChar((curl_req[["content"]])))
+return(response_json[["waypoints"]][["nodes"]])
+}
+####
+
+coords <- df_focused_commute_GPS %>% 
+  filter(id == 5142594496) %>% #here just one id, need to make that a funtion for each
+  as.data.frame() %>% 
+  dplyr::select(lat,lon) %>% 
+  mutate(id = row_number()) %>% 
+ # head(300) %>%
+# slice(which(row_number() %% 5 == 1)) %>% 
+  rowwise() %>% 
+  mutate(node = osrmNearest(lon,lat)) 
+
+test <- coords %>% 
+  unnest_wider(node, names_sep = "_") %>% 
+  mutate(node_1 = ifelse(node_1 == 0, NA, node_1))%>% 
+  mutate(lag_node1 = ifelse(node_1 == lag(node_1) |
+                              node_1 == lag(node_2),
+                            paste(node_1, T,sep = ","),
+                            paste(node_1,F,sep = ",")),
+         lag_node2 = ifelse(node_2 == lag(node_1) |
+                              node_2 == lag(node_2), paste(node_2, T,sep = ","),paste(node_2,F,sep = ","))) %>% 
+  dplyr::select(-c(node_1,node_2)) %>% 
+  pivot_longer(!c(lat,
+                  lon,
+                  id))%>%
+  separate(value, c("foo", "bar"),sep = ",") %>% 
+  dplyr::select(-name) %>% 
+  mutate(bar = ifelse(bar == "FALSE", F,T)) %>% 
+  group_by(id) %>% 
+  mutate(any_true = any(bar== T, na.rm = T) )
+
+
+####library(httr)
+pacman::p_load(XML,
+               osmar,
+               xml2)
+
+install.packages("osmar")
+
+library(XML)
+library(osmar)
+library(xml2)
+install.packages("stringr")
+
+get_osm_ways <- function(x){
+  r <- GET(paste0("https://www.openstreetmap.org/api/0.6/node/",x,"/ways"))
+doc <- read_xml(rawToChar(r$content))
+
+food_xml <- xmlParse(doc)
+wut <- xmlToList(food_xml)
+
+xml_attrs(xml_child(doc, 1))
+
+ 
+ways <- list()
+for(i in 1:sum((names(wut) == "way"), na.rm = TRUE)){
+ways[[i]] <- xml_attrs(xml_child(doc, i))
+
+ways[[i]] <- ways[[i]][["id"]]
+
+}
+ways <- unlist(ways)
+return(ways)
+}
+https://www.openstreetmap.org/api/0.6/node/8432755/ways
+
+
+get_osm_ways(1810626946)
+
+# Ça marche aussi :)
+
+#####
+
+test <- coords %>% 
+  add_count(node)%>% 
+  distinct(node, .keep_all = T) %>% 
+  group_by(id) %>% 
+  filter(n == max(n))%>% 
+  rowwise() %>% 
+  head()%>% 
+  unnest(node)
+
+way <- NULL
+for(i in test$node){
+x <-   list(get_osm_ways(i))
+ print(x)
+ 
+ way <- way %>%
+   rbind(x) 
+}
+
+way <- do.call(rbind, way)
+
+colnames(way) <- c("col1", "col2", "way3")
+
+test = test %>% 
+  cbind(way)
+
+
+test2 <- test %>% 
+     group_by(id) %>%
+     mutate_each(funs(c(NA,diff(.))))%>%
+     rename(dx=x, dy=y)
+
+id <- as.vector(test$way3) %>% 
+  unique()
+
+dat1 <- opq_osm_id(type = "way", id = 47058258) %>%
+    opq_string () %>%
+    osmdata_sf ()
+
+ggplot() +
+  geom_sf(data = dat1$osm_lines ) +
+  geom_path(data = coords,
+            aes(x = lon, y = lat),
+            color = "red",
+            alpha = 0.5)
+
+
+#####
+
+
+osrmMatch <- function(x,y){
+  curl_req <- httr::GET(url = paste0("http://router.project-osrm.org/match/v1/bike/",x,"?number=1"))
+    response_json <- jsonlite::fromJSON(rawToChar((curl_req[["content"]])))
+return(response_json)
+}
+
+df_focused_commute_GPS %>% 
+  filter(id == 5142594496) %>% 
+  as.data.frame() %>% 
+  dplyr::select(lat,lon) %>% 
+  mutate(id = row_number()) %>% 
+  head(300) %>%
+ slice(which(row_number() %% 30 == 1)) %>% 
+  ggplot() +
+  geom_point(aes( x = lat,
+                  y = lon))
+
+coords <- df_focused_commute_GPS %>% 
+  filter(id == 5142594496) %>% 
+  as.data.frame() %>% 
+  dplyr::select(lat,lon) %>% 
+  mutate(id = row_number()) %>% 
+  head(300) %>%
+ slice(which(row_number() %% 30 == 1)) %>% 
+ summarise(paste(lon, lat, sep = ",", collapse = ";")) %>% 
+  pull()
+coords
+curl_req <- httr::GET(url = paste0("http://router.project-osrm.org/match/v1/bike/",coords, "?overview=full"))
+ response_json <- jsonlite::fromJSON(rawToChar((curl_req[["content"]])))
+ 
+ 
+ test <- response_json[["matchings"]]
+
+
+ 
+curl_req <-httr::GET(url = "http://router.project-osrm.org/match/v1/driving/2.34109,48.75076;2.35324,48.75451;2.36264,48.76131;2.36792,48.77118?overview=full")
+ response_json <- jsonlite::fromJSON(rawToChar((curl_req[["content"]])))
+response_json
+
+
+
+
+```
+
+```{r}
+rides_info <- function(id){
+  
+ride_raw <- get_streams(stoken, id ) 
+
+ride <- ride_raw%>%
+   purrr::transpose() %>% 
+   tibble::as_tibble() %>% 
+   dplyr::select(type, data) %>% 
+   dplyr::mutate(type = unlist(type),  
+        data = purrr::map(data, function(x) {
+            idx <- !sapply(x, length)
+            x[idx] <- NA
+            return(x)
+        }))
+
+lat_lng_to_df <- function(x) {
+   purrr::set_names(x, nm = c("lat", "lng")) %>% tibble::as_tibble()
+ }
+ 
+ ride <- ride %>% 
+   tidyr::spread(data = ., key = type, value = data) %>%
+   tidyr::unnest(cols = c(altitude, distance, grade_smooth, latlng, moving, time, velocity_smooth)) %>%
+   dplyr::mutate(latlng = purrr::map(latlng, lat_lng_to_df)) %>%
+   tidyr::unnest(cols = c(altitude, distance, grade_smooth, latlng, moving, time, velocity_smooth)) %>%
+   mutate(velocity_kph = 3.6 * velocity_smooth) %>% 
+  st_as_sf(coords = c("lng", "lat"), 
+                 crs = 4326 , agr = "constant") 
+ 
+ return(ride)
+}
+
+df_focused_commute_GPS <- sapply(df_focused_commute$id, rides_info)
+```
+
+
+```{r}
+test <- df_focused_commute_GPS[[1]] 
+
+road_network <- opq(matrix(c( 2.219044, 2.5, 48.720164, 48.910349),
+       byrow = T,
+       nrow = 2,
+       dimnames = list(c("x", "y"), c("min","max")))) %>% 
+  add_osm_feature("highway", "primary") %>% 
+  osmdata_sf()
+
+class(df_focused_commute_GPS[[1]])
+
+test <- df_focused_commute_GPS[[1]] %>% 
+  st_as_sf(coords = c("lng", "lat"), 
+                 crs = 4326 , agr = "constant") 
+
+ggplot() +
+  geom_sf(data = road_network$osm_lines) +
+  geom_sf(data = test,
+          color = "red")
+
+#Use map matching API
+test_join <- st_intersection(test, road_network$osm_lines)
+
+ggplot() +
+  geom_sf(data = test_join)
+
+```
+
+```{r}
+plot(df$geometry)
+
+st_crs(municipalities)
+
+ggplot() +
+  geom_sf(data = municipalities,
+          inherit.aes = FALSE) +
+  geom_sf(data = DT_sf,
+          inherit.aes = FALSE) +
+  labs(x = "", y = "")
+
+out <- st_intersection(DT_sf, municipalities)
+
+#K means
+df <- all_commutes %>%
+  as.data.frame() %>% 
+  dplyr::select(id, start_latlng1,start_latlng2) 
+
+x = c(min(df$start_latlng2 -0.015 , na.rm = T),
+      max(df$start_latlng2 + 0.015, na.rm = T))
+y = c(min(df$start_latlng1 - 0.01, na.rm = T),
+      max(df$start_latlng1 +  0.01, na.rm = T))
+
+
+coordinates = rbind(x,y)
+coordinates = matrix(coordinates, nrow = 2)
+colnames(coordinates) <- c("min", "max")
+rownames(coordinates) <- c("x", "y")
+
+map <- get_map(coordinates, maptype = "toner-background", source = "stamen")
+
+ggmap(map, zoom = 12)+
+  geom_point(data = df,aes(x = start_latlng2,
+                 y = start_latlng1))+
+  xlab("")+
+  ylab("") 
+
+row.names(df) <- df$id
+
+df <- df %>% 
+  dplyr::select(!id)
+
+df
+
+fviz_nbclust(df, kmeans, method = "silhouette", k.max = 30)
+
+k2 <- kmeans(df, centers = 6, nstart = 1)
+
+df_cluster <- df %>% 
+merge(as.data.frame(k2[["cluster"]]),by='row.names',all=TRUE) %>% 
+  rename_at(4, ~"cluster")
+
+df_cluster$coord <- lapply(1:nrow(df_cluster), function(i) c(df_cluster$start_latlng1[i], df_cluster$start_latlng2[i]))
+
+d <- cbind("cluster" = rownames(k2[["centers"]]), data.frame(k2[["centers"]], row.names=NULL))
+  
+d$coord_center <- lapply(1:nrow(d), function(i) c(d$start_latlng1[i], d$start_latlng2[i]))
+
+d <- d %>% 
+  dplyr::select(c(cluster, coord_center))
+
+EuclideanDistance <- function(vect1, vect2) sqrt(sum((vect1 - vect2)^2))
+
+df_cluster <- df_cluster %>% 
+  merge(d, by = "cluster") %>% 
+  rowwise() %>% 
+  mutate(dist = EuclideanDistance(coord_center,coord))
+
+
+ggmap(map, zoom = 12)+
+  geom_point(data = df_cluster,
+             aes(x = start_latlng2,
+                 y = start_latlng1,
+                 group = cluster,
+                 color = as.factor(cluster)))+
+  xlab("")+
+  ylab("") 
+
+start_coord <- as.data.frame(k2[["centers"]])
+
+library(mapview)
+start_coord_mapview = start_coord %>%
+  st_as_sf(coords = c("start_latlng2", "start_latlng1"), crs = 4326) %>% 
+   summarise(do_union = FALSE) %>%
+  st_cast("POINT") 
+
+mapview(start_coord_mapview)
+  
+
+
+
+```
+```{r}
+library(tidygeocoder)
+
+home_coordinates <- tribble( ~name,~addr,"Home","Rungis")%>%
+  geocode(addr) %>% 
+  rowwise() 
+
+home_coordinates$coord = lapply(1:nrow(home_coordinates), function(i) c(home_coordinates$lat[i], home_coordinates$long[i]))
+all_commutes$coord_start <- lapply(1:nrow(all_commutes), function(i) c(all_commutes$start_latlng1[i], all_commutes$start_latlng2[i]))
+
+EuclideanDistance <- function(vect1, vect2) sqrt(sum((vect1 - vect2)^2))
+
+home_points <- all_commutes %>%
+  as.data.frame() %>% 
+  mutate(home_coord = home_coordinates$coord,
+         dist = EuclideanDistance(home_coord, coord_start))
+
+
+
+  dplyr::select(id, start_latlng1,start_latlng2) %>% 
+
+df <- df %>% 
+  dplyr::select(!id)
+
+fviz_nbclust(df, kmeans, method = "silhouette", k.max = 30)
+
+k2 <- kmeans(df, centers = 6, nstart = 1)
+
+
+cluster = as.data.frame(k2[["cluster"]]) %>% 
+  rename_at(1, ~"cluster")
+
+df_cluster <- all_commutes %>%
+  as.data.frame() %>% 
+  filter(start_latlng2 > 0) %>% 
+  as.data.frame()  %>% 
+merge(cluster ,by='row.names',all=TRUE) 
+
+df_cluster$coord <- lapply(1:nrow(df_cluster), function(i) c(df_cluster$start_latlng1[i], df_cluster$start_latlng2[i]))
+
+d <- cbind("cluster" = rownames(k2[["centers"]]), data.frame(k2[["centers"]], row.names=NULL))
+  
+d$coord_center <- lapply(1:nrow(d), function(i) c(d$start_latlng1[i], d$start_latlng2[i]))
+
+x = c(min(df$start_latlng2 -0.015 , na.rm = T),
+      max(df$start_latlng2 + 0.015, na.rm = T))
+y = c(min(df$start_latlng1 - 0.01, na.rm = T),
+      max(df$start_latlng1 +  0.01, na.rm = T))
+coordinates = rbind(x,y)
+coordinates = matrix(coordinates, nrow = 2)
+colnames(coordinates) <- c("min", "max")
+rownames(coordinates) <- c("x", "y")
+
+map <- get_map(coordinates, maptype = "toner-background", source = "stamen")
+
+
+ggmap(map, zoom = 12)+
+  geom_point(data = df_cluster,
+             aes(x = start_latlng2,
+                 y = start_latlng1,
+                 group = cluster,
+                 color = as.factor(cluster)))+
+  xlab("")+
+  ylab("") 
+
+home_points <- df_cluster %>% 
+  filter(cluster == 6)
+
+ggmap(map, zoom = 12)+
+  geom_point(data = home_points,
+             aes(x = start_latlng2,
+                 y = start_latlng1,
+                 group = cluster,
+                 color = as.factor(cluster)))+
+  xlab("")+
+  ylab("") 
+
+home_points %>% 
+  dplyr::select(end_latlng1, end_latlng2) %>% 
+  fviz_nbclust(., kmeans, method = "silhouette", k.max = 30)
+
+end_points = home_points %>% 
+  dplyr::select(end_latlng1, end_latlng2)
+
+k2 = end_points %>% 
+   kmeans(., centers = 15, nstart = 1)
+
+
+cluster = as.data.frame(k2[["cluster"]]) %>% 
+  rename_at(1, ~"cluster")
+
+
+  ggmap(map, zoom = 12)+
+    geom_point(data = end_points %>%
+  as.data.frame() %>% 
+merge(cluster ,by='row.names',all=TRUE) ,
+               aes(x = end_latlng2,
+                 y = end_latlng1,
+                 group = cluster,
+                 color = as.factor(cluster)))+
+  xlab("")+
+  ylab("") 
+
+
+```
+
+#one part on health benefits
+#econ benefits with gas price
+#environmental benefits
